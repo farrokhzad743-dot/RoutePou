@@ -13,9 +13,12 @@ class WireGuardService : Service() {
     companion object {
         const val ACTION_START = "com.pou.routepou.WG_START"
         const val EXTRA_IPC = "ipc_config"
+        const val EXTRA_UPSTREAM = "upstream_socks5"
         private const val CHANNEL = "routepou_wireguard"
         private const val NOTIFICATION_ID = 42
     }
+
+    private var upstreamMonitor: AndroidUpstreamMonitor? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         createChannel()
@@ -26,8 +29,19 @@ class WireGuardService : Service() {
                 stopSelf()
                 return START_NOT_STICKY
             }
-            WireGuardEngine.start(ipc).onSuccess {
-                updateNotification("WireGuard endpoint active · waiting for Windows handshake")
+            val upstream = intent.getStringExtra(EXTRA_UPSTREAM).orEmpty()
+            WireGuardEngine.start(ipc, upstream).onSuccess {
+                val monitor = AndroidUpstreamMonitor(this) { snapshot ->
+                    updateNotification("WireGuard active · ${snapshot.userMessage()}")
+                }
+                upstreamMonitor?.stop()
+                upstreamMonitor = monitor
+                try {
+                    monitor.start()
+                    updateNotification("WireGuard endpoint active · ${monitor.snapshot().userMessage()} · ${if (upstream.isBlank()) "default route" else "SOCKS5 upstream"}")
+                } catch (error: Exception) {
+                    updateNotification("WireGuard active · network monitoring unavailable")
+                }
             }.onFailure { error ->
                 updateNotification("WireGuard failed: ${error.message ?: "unknown error"}")
                 stopSelf()
@@ -37,6 +51,8 @@ class WireGuardService : Service() {
     }
 
     override fun onDestroy() {
+        upstreamMonitor?.stop()
+        upstreamMonitor = null
         WireGuardEngine.stop()
         super.onDestroy()
     }

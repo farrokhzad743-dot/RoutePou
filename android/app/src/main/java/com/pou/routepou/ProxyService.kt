@@ -79,13 +79,13 @@ class ProxyService : Service() {
             client.tcpNoDelay = true
             val input = BufferedInputStream(client.getInputStream())
             val output = BufferedOutputStream(client.getOutputStream())
-            val first = input.read()
-            if (first < 0) return
-            if (first == 0x05) {
+            val firstByte = input.read()
+            if (firstByte < 0) return
+            if (firstByte == 0x05) {
                 handleSocks5(client, input, output)
                 return
             }
-            val header = readHeader(input, first) ?: return
+            val header = readHeader(input, firstByte) ?: return
             if (accessToken.isBlank() || !authorized(header)) {
                 output.write("HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm=\"RoutePou\"\r\nConnection: close\r\nContent-Length: 0\r\n\r\n".toByteArray()); output.flush(); return
             }
@@ -94,8 +94,8 @@ class ProxyService : Service() {
                 val body = "{\"status\":\"ok\",\"connections\":$connections,\"bytes\":$bytesRelayed}"
                 output.write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ${body.toByteArray().size}\r\nConnection: close\r\n\r\n$body".toByteArray()); output.flush(); return
             }
-            val first = header.substringBefore("\r\n")
-            val parts = first.split(" ")
+            val requestLine = header.substringBefore("\r\n")
+            val parts = requestLine.split(" ")
             if (parts.size < 3) return
             val method = parts[0].uppercase()
             val target = parts[1]
