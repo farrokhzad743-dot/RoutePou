@@ -22,7 +22,12 @@ jobs:
         with:
           go-version: '1.25.x'
           cache: true
-          cache-dependency-path: windows/wg-clinet/go.sum
+          cache-dependency-path: windows/wg-clinet/go.mod
+      - name: Resolve and verify Go modules
+        working-directory: windows/wg-clinet
+        run: |
+          go mod download
+          go mod verify
       - name: Test WireGuard worker
         working-directory: windows/wg-clinet
         run: go test ./...
