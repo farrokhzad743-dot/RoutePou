@@ -1,0 +1,29 @@
+name: RoutePou WireGuard engine tests
+on:
+  push:
+    paths: ['third_party/relay-wg/**', 'windows/wg-client/**', '.github/workflows/relay-wg-ci.yml']
+  pull_request:
+    paths: ['third_party/relay-wg/**', 'windows/wg-client/**', '.github/workflows/relay-wg-ci.yml']
+  workflow_dispatch:
+jobs:
+  phone-engine:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version: '1.25.x' }
+      - name: Test Android-side forwarding engine
+        working-directory: third_party/relay-wg
+        run: go test ./...
+  windows-client:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version: '1.25.x' }
+      - name: Test Windows tunnel client
+        working-directory: windows/wg-client
+        run: go test ./...
+      - name: Build Windows tunnel client
+        working-directory: windows/wg-client
+        run: go build -o RoutePou-WgClient.exe .
