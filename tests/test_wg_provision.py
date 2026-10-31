@@ -1,4 +1,4 @@
-import base64, json, unittest
+import base64, json, unittest, time
 from windows.wg_provision import parse_qr_to_windows_ipc, ProvisioningError
 
 def key(byte): return base64.b64encode(bytes([byte])*32).decode()
@@ -6,7 +6,7 @@ def qr(obj): return "routepou://p/" + base64.urlsafe_b64encode(json.dumps(obj).e
 
 class ProvisionTests(unittest.TestCase):
     def setUp(self):
-        self.obj={"v":1,"mode":"wireguard","host":"192.168.43.1","port":51820,
+        self.obj={"v":1,"mode":"wireguard","host":"192.168.43.1","port":51820,"issuedAt":int(time.time()),
                   "wg":{"serverPublicKey":key(1),"clientPrivateKey":key(2),
                         "allowedIps":"0.0.0.0/0","endpointPort":51820,"dns":"1.1.1.1"}}
     def test_valid_payload_builds_memory_ipc(self):
@@ -22,6 +22,22 @@ class ProvisionTests(unittest.TestCase):
         with self.assertRaises(ProvisioningError): parse_qr_to_windows_ipc(qr(self.obj))
     def test_reject_wrong_scheme(self):
         with self.assertRaises(ProvisioningError): parse_qr_to_windows_ipc("https://example.com")
+
+    def test_reject_expired_qr(self):
+        self.obj["issuedAt"] = int(time.time()) - 301
+        with self.assertRaisesRegex(ProvisioningError, "expired"):
+            parse_qr_to_windows_ipc(qr(self.obj))
+
+    def test_reject_future_qr(self):
+        self.obj["issuedAt"] = int(time.time()) + 61
+        with self.assertRaisesRegex(ProvisioningError, "future"):
+            parse_qr_to_windows_ipc(qr(self.obj))
+
+    def test_reject_loopback_host(self):
+        self.obj["host"] = "127.0.0.1"
+        with self.assertRaises(ProvisioningError):
+            parse_qr_to_windows_ipc(qr(self.obj))
+
     def test_reject_bad_key(self):
         self.obj["wg"]["clientPrivateKey"]="bad"
         with self.assertRaises(ProvisioningError): parse_qr_to_windows_ipc(qr(self.obj))
