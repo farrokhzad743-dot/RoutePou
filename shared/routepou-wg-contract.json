@@ -8,5 +8,7 @@
   "listenPort": 51820,
   "keepaliveSeconds": 25,
   "privateKeyHandling": "memory-only",
-  "qrScheme": "routepou://p/"
+  "qrScheme": "routepou://p/",
+  "pairingTtlSeconds": 300,
+  "pairingClockSkewSeconds": 60
 }
