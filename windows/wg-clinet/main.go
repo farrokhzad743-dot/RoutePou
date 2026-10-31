@@ -192,10 +192,9 @@ func run(name, address, dns, routes, pipe string, blockLeaks, holdOnLoss bool) e
 	//
 	// wfp_windows.go says why this is written against WFP directly rather than
 	// using wireguard-windows' firewall package, which cannot work from a
-	// non-service process. Failure is reported and the tunnel still comes up: a
-	// leak is bad, but a Relay that refuses to connect is worse, and every
-	// release before this one ran without these filters anyway. What must not
-	// happen is silence, because the person now believes they are protected.
+	// non-service process. A full-device tunnel must fail closed if the filters
+	// cannot be installed: bringing up a default route without IPv6/DNS leak
+	// protection would silently expose traffic outside the tunnel.
 	if blockLeaks {
 		var resolvers []netip.Addr
 		if server, err := netip.ParseAddr(dns); err == nil {
@@ -207,6 +206,7 @@ func run(name, address, dns, routes, pipe string, blockLeaks, holdOnLoss bool) e
 			if _, werr := fmt.Fprintln(channel, leakProtectionFailedLine); werr != nil {
 				return fmt.Errorf("reporting that leak protection is unavailable: %w", werr)
 			}
+			return fmt.Errorf("refusing full tunnel because leak protection could not be installed: %w", err)
 		} else {
 			defer stop()
 			fmt.Fprintln(os.Stderr, "leak protection on: DNS is pinned to the tunnel and IPv6 is refused")
