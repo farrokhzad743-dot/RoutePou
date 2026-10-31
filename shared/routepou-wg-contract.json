@@ -1,0 +1,12 @@
+{
+  "protocolVersion": 1,
+  "mode": "wireguard",
+  "phoneTunnelAddress": "10.13.37.1/32",
+  "windowsTunnelAddress": "10.13.37.2/32",
+  "windowsAllowedIps": "0.0.0.0/0",
+  "mtu": 1420,
+  "listenPort": 51820,
+  "keepaliveSeconds": 25,
+  "privateKeyHandling": "memory-only",
+  "qrScheme": "routepou://p/"
+}
