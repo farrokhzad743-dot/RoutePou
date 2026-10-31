@@ -4,9 +4,11 @@ The returned string contains a private key. Callers must pass it directly to the
 Windows worker's authenticated named pipe and must never log or persist it.
 """
 from __future__ import annotations
-import base64, binascii, ipaddress, json, re
+import base64, binascii, ipaddress, json, re, time
 
 _KEY = re.compile(r"^[A-Za-z0-9+/]{43}=$")
+PAIRING_TTL_SECONDS = 300
+CLOCK_SKEW_SECONDS = 60
 
 class ProvisioningError(ValueError):
     pass
@@ -37,6 +39,7 @@ def parse_qr_to_windows_ipc(payload: str) -> tuple[str, dict]:
     try:
         host = ipaddress.ip_address(obj["host"])
         port = int(obj["port"])
+        issued_at = int(obj["issuedAt"])
         wg = obj["wg"]
         server_pub = _key(wg["serverPublicKey"], "server public key")
         client_priv = _key(wg["clientPrivateKey"], "client private key")
@@ -45,8 +48,13 @@ def parse_qr_to_windows_ipc(payload: str) -> tuple[str, dict]:
         if isinstance(exc, ProvisioningError):
             raise
         raise ProvisioningError("Invalid pairing fields") from exc
-    if not isinstance(host, ipaddress.IPv4Address) or not host.is_private:
-        raise ProvisioningError("Pairing host must be a private IPv4 address")
+    if not isinstance(host, ipaddress.IPv4Address) or not host.is_private or host.is_loopback or host.is_link_local or host.is_multicast:
+        raise ProvisioningError("Pairing host must be a usable private IPv4 address")
+    now = int(time.time())
+    if issued_at > now + CLOCK_SKEW_SECONDS:
+        raise ProvisioningError("Pairing QR was issued in the future")
+    if now - issued_at > PAIRING_TTL_SECONDS:
+        raise ProvisioningError("Pairing QR has expired; generate a new QR on the phone")
     if not 1 <= port <= 65535 or wg.get("endpointPort") != port:
         raise ProvisioningError("Invalid endpoint port")
     if wg.get("allowedIps") != "0.0.0.0/0":
