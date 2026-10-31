@@ -1,0 +1,20 @@
+{
+  "device": {
+    "android_build": "",
+    "windows_build": "",
+    "test_timestamp_utc": ""
+  },
+  "checks": {
+    "pairing_fresh": false,
+    "endpoint_reachable": false,
+    "handshake_recent": false,
+    "tcp_through_phone": false,
+    "udp_through_phone": false,
+    "dns_through_tunnel": false,
+    "ipv6_no_leak": false,
+    "fail_closed_on_peer_loss": false,
+    "recovery_clean": false,
+    "disconnect_rollback_clean": false
+  },
+  "notes": "Sanitized notes only. Never add QR, keys, tokens, or credentials."
+}
