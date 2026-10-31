@@ -1,0 +1,9 @@
+.gradle/
+**/build/
+**/__pycache__/
+.pytest_cache/
+*.py[cod]
+.DS_Store
+Thumbs.db
+dist/
+build/
