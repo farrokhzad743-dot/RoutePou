@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.27.0-beta — Release readiness
+### Security
+- **Removed the shared TLS identity.** Earlier builds shipped one PKCS#12 keystore (with its password in the source) inside every APK, so anyone holding the APK could impersonate any phone. Each installation now generates its own EC key and self-signed certificate inside the Android Keystore; the key never leaves the device. "New pairing key" also rotates the certificate.
+- Proxy byte counter is now thread-safe; proxy startup failures are logged instead of silently swallowed.
+- Windows: the system proxy setting is restored on any normal interpreter exit, not only when the window is closed.
+
+### Build and release
+- One workflow (`.github/workflows/build.yml`) runs tests, builds the Android APK and `RoutePou.exe`, and on a `v*` tag publishes a GitHub Release with SHA-256 checksums. The three earlier workflows disagreed about paths and could not both succeed.
+- Fixed the `windows/wg-clinet` directory typo (now `windows/wg-client`) that broke the Windows build.
+- Android release APK is signed from CI secrets (`ANDROID_KEYSTORE_BASE64`, …); without them it falls back to the debug key so it stays installable. `scripts/make-android-keystore.sh` creates the key.
+- Added Android launcher icon, Windows `.ico`, `LICENSE` (GPL-3.0), `SECURITY.md`, `docs/RELEASING.md` and a rewritten README.
+- Moved the per-version status notes to `docs/history/`; removed stray files and caches from the tree.
+- `VERSION` is the single source of truth, checked by tests against Gradle, the Windows app and the changelog.
+- `scripts/build-wg-aar.sh` now also verifies 16 KB page alignment of the native libraries.
+
+### Not changed
+- Real-device pairing, data-plane and leak testing of the full WireGuard tunnel are still outstanding; this stays a pre-release.
+
 ## 0.13.0-alpha
 - Connected Android Full Tunnel controls to a dedicated foreground WireGuard endpoint service.
 - Generate a fresh server/client WireGuard key pair, start the phone endpoint through the Relay gomobile bridge, and display a versioned pairing QR for Windows.
