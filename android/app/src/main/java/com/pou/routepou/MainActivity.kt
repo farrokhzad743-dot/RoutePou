@@ -26,7 +26,6 @@ import com.google.zxing.qrcode.QRCodeWriter
 import java.net.Inet4Address
 import java.net.NetworkInterface
 import java.net.URLEncoder
-import java.security.MessageDigest
 import java.security.SecureRandom
 
 class MainActivity : Activity() {
@@ -75,7 +74,7 @@ class MainActivity : Activity() {
         }
 
         pairingToken = getOrCreateToken()
-        fingerprint = certificateFingerprint()
+        fingerprint = loadFingerprint()
         buildScreen()
         refreshQr()
     }
@@ -100,7 +99,7 @@ class MainActivity : Activity() {
         }
         header.addView(brand)
         header.addView(themeButton, LinearLayout.LayoutParams(-2, dp(42)).apply { marginEnd = dp(8) })
-        val badge = text("ALPHA", 10f, Color.WHITE, true).apply {
+        val badge = text("BETA", 10f, Color.WHITE, true).apply {
             setPadding(dp(12), dp(7), dp(12), dp(7)); background = rounded(accent, 30)
         }
         header.addView(badge)
@@ -203,7 +202,7 @@ class MainActivity : Activity() {
         note.addView(text("نسخه آلفا است. پروکسی فقط ترافیک برنامه‌هایی را عبور می‌دهد که دستی به آن متصل شوند؛ این حالت VPN سراسری گوشی یا ویندوز نیست. برای تونل کامل، عملکرد واقعی و Handshake باید روی دو دستگاه آزمایش شود.", 11f, muted))
         page.addView(note)
         page.addView(space(18))
-        page.addView(text("RoutePou 0.26.0-alpha  •  POU Network Tools", 10f, muted).apply { gravity = Gravity.CENTER })
+        page.addView(text("RoutePou ${BuildConfig.VERSION_NAME}  •  POU Network Tools", 10f, muted).apply { gravity = Gravity.CENTER })
 
         val scroll = ScrollView(this).apply {
             isFillViewport = true
@@ -355,6 +354,8 @@ class MainActivity : Activity() {
         if (wasRunning) stopProxy()
         getSharedPreferences("routepou", MODE_PRIVATE).edit().remove("access_token").apply()
         pairingToken = getOrCreateToken()
+        try { TlsIdentity.regenerate() } catch (_: Exception) { }
+        fingerprint = loadFingerprint()
         tokenView.text = "کلید جفت‌سازی: مخفی · کلید جدید ساخته شد"
         refreshQr()
         if (wasRunning) startProxy()
@@ -363,13 +364,8 @@ class MainActivity : Activity() {
 
     private fun enc(value: String) = URLEncoder.encode(value, "UTF-8")
 
-    private fun certificateFingerprint(): String = try {
-        val cert = assets.open("routepou-server.p12").use { stream ->
-            val ks = java.security.KeyStore.getInstance("PKCS12")
-            ks.load(stream, "routepou-alpha-keystore".toCharArray())
-            ks.getCertificate("routepou")
-        }
-        MessageDigest.getInstance("SHA-256").digest(cert.encoded).joinToString("") { "%02X".format(it) }
+    private fun loadFingerprint(): String = try {
+        TlsIdentity.fingerprint()
     } catch (_: Exception) { "Fingerprint unavailable" }
 
     private fun getOrCreateToken(): String {

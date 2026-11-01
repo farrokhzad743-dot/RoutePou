@@ -7,12 +7,12 @@ import android.app.Service
 import android.content.Intent
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
 import java.io.InputStream
 import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLServerSocket
-import java.security.KeyStore
 import java.net.ServerSocket
 import java.net.Socket
 import java.net.InetSocketAddress
@@ -23,7 +23,8 @@ class ProxyService : Service() {
         const val EXTRA_TOKEN = "token" }
     @Volatile private var running = false
     @Volatile private var accessToken: String = ""
-    @Volatile private var bytesRelayed: Long = 0L
+    private val bytesRelayedCounter = java.util.concurrent.atomic.AtomicLong()
+    private val bytesRelayed: Long get() = bytesRelayedCounter.get()
     @Volatile private var connections: Int = 0
     private var server: ServerSocket? = null
     private val pool = Executors.newCachedThreadPool()
@@ -52,12 +53,7 @@ class ProxyService : Service() {
         running = true
         pool.execute {
             try {
-                val keyStore = KeyStore.getInstance("PKCS12")
-                assets.open("routepou-server.p12").use { keyStore.load(it, "routepou-alpha-keystore".toCharArray()) }
-                val kmf = javax.net.ssl.KeyManagerFactory.getInstance(javax.net.ssl.KeyManagerFactory.getDefaultAlgorithm())
-                kmf.init(keyStore, "routepou-alpha-keystore".toCharArray())
-                val context = SSLContext.getInstance("TLS")
-                context.init(kmf.keyManagers, null, java.security.SecureRandom())
+                val context = TlsIdentity.sslContext()
                 val tlsServer = context.serverSocketFactory.createServerSocket() as SSLServerSocket
                 tlsServer.enabledProtocols = arrayOf("TLSv1.3", "TLSv1.2")
                 tlsServer.reuseAddress = true
@@ -68,7 +64,7 @@ class ProxyService : Service() {
                     if (client is javax.net.ssl.SSLSocket) client.enabledProtocols = arrayOf("TLSv1.3", "TLSv1.2")
                     pool.execute { handle(client) }
                 }
-            } catch (_: Exception) { }
+            } catch (e: Exception) { Log.e("RoutePou", "TLS proxy stopped: ${e.message}") }
             finally { running = false }
         }
     }
@@ -178,7 +174,7 @@ class ProxyService : Service() {
 
     private fun relay(a: Socket, b: Socket, bufferedClientInput: InputStream) {
         val done = java.util.concurrent.CountDownLatch(2)
-        fun copy(src: Socket, dst: Socket) { try { val buffer = ByteArray(32768); while (true) { val source = if (src === a) bufferedClientInput else src.getInputStream(); val n = source.read(buffer); if (n < 0) break; dst.getOutputStream().write(buffer, 0, n); dst.getOutputStream().flush(); bytesRelayed += n }; dst.shutdownOutput() } catch (_: Exception) { } finally { done.countDown() } }
+        fun copy(src: Socket, dst: Socket) { try { val buffer = ByteArray(32768); while (true) { val source = if (src === a) bufferedClientInput else src.getInputStream(); val n = source.read(buffer); if (n < 0) break; dst.getOutputStream().write(buffer, 0, n); dst.getOutputStream().flush(); bytesRelayedCounter.addAndGet(n.toLong()) }; dst.shutdownOutput() } catch (_: Exception) { } finally { done.countDown() } }
         pool.execute { copy(a, b) }; pool.execute { copy(b, a) }
         done.await()
         try { b.close() } catch (_: Exception) { }
