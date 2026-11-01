@@ -1,0 +1,249 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [main, master]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+env:
+  ANDROID_NDK_VERSION: '27.2.12479018'
+  ANDROID_COMPILE_SDK: '35'
+  ANDROID_BUILD_TOOLS: '35.0.0'
+
+jobs:
+  # ---------------------------------------------------------------- tests (Linux)
+  tests:
+    name: Python and Go tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache-dependency-path: third_party/relay-wg/go.sum
+      - name: Python tests
+        run: |
+          python -m pip install --upgrade pip pytest
+          python -m pytest -q
+      - name: Phone-side WireGuard engine tests
+        working-directory: third_party/relay-wg
+        run: go test ./...
+
+  # --------------------------------------------------------------------- Android
+  android:
+    name: Android APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      ROUTEPOU_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ROUTEPOU_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ROUTEPOU_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read version
+        run: echo "VERSION=$(tr -d '[:space:]' < VERSION)" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache-dependency-path: third_party/relay-wg/go.sum
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android platform, build-tools and NDK
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platform-tools" "platforms;android-${ANDROID_COMPILE_SDK}" \
+            "build-tools;${ANDROID_BUILD_TOOLS}" "ndk;${ANDROID_NDK_VERSION}"
+          echo "ANDROID_NDK_HOME=${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}" >> "$GITHUB_ENV"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Restore release signing key (if configured)
+        shell: bash
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/routepou-release.jks"
+            echo "ROUTEPOU_KEYSTORE_FILE=$RUNNER_TEMP/routepou-release.jks" >> "$GITHUB_ENV"
+            echo "Release signing key restored."
+          else
+            echo "::warning::No ANDROID_KEYSTORE_BASE64 secret: the release APK will be signed with the debug key. Fine for testing, but users cannot later update in place to a properly signed build."
+          fi
+
+      - name: Build WireGuard engine (relaywg.aar)
+        run: ./scripts/build-wg-aar.sh
+
+      - name: Assemble APKs
+        working-directory: android
+        run: gradle --no-daemon --stacktrace assembleDebug assembleRelease
+
+      - name: Verify and name APKs
+        shell: bash
+        run: |
+          set -euo pipefail
+          out=android/app/build/outputs/apk
+          rel="$out/release/app-release.apk"
+          dbg="$out/debug/app-debug.apk"
+          test -s "$rel"; test -s "$dbg"
+          "$ANDROID_HOME/build-tools/${ANDROID_BUILD_TOOLS}/apksigner" verify --print-certs "$rel"
+          mkdir -p dist
+          cp "$rel" "dist/RoutePou-${VERSION}-android.apk"
+          cp "$dbg" "dist/RoutePou-${VERSION}-android-debug.apk"
+          ls -lh dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RoutePou-Android
+          if-no-files-found: error
+          retention-days: 30
+          path: dist/*.apk
+
+  # --------------------------------------------------------------------- Windows
+  windows:
+    name: Windows EXE
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read version
+        shell: pwsh
+        run: |
+          $v = (Get-Content VERSION -Raw).Trim()
+          "VERSION=$v" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache-dependency-path: windows/wg-client/go.sum
+
+      - name: Install Python dependencies
+        run: python -m pip install --upgrade pip pyinstaller pytest zxing-cpp pillow opencv-python
+
+      - name: Test and build the privileged WireGuard worker
+        working-directory: windows/wg-client
+        shell: pwsh
+        run: |
+          go mod tidy
+          go mod verify
+          go test ./...
+          go build -trimpath -ldflags="-s -w" -o ../relaywg-client.exe .
+
+      - name: Download Wintun runtime
+        shell: pwsh
+        run: |
+          $zip = Join-Path $env:RUNNER_TEMP 'wintun.zip'
+          Invoke-WebRequest -Uri 'https://www.wintun.net/builds/wintun-0.14.1.zip' -OutFile $zip
+          $hash = (Get-FileHash $zip -Algorithm SHA256).Hash
+          Write-Host "wintun-0.14.1.zip SHA-256: $hash"
+          Expand-Archive -Path $zip -DestinationPath (Join-Path $env:RUNNER_TEMP 'wintun') -Force
+          $dll = Get-ChildItem (Join-Path $env:RUNNER_TEMP 'wintun') -Recurse -Filter wintun.dll |
+                 Where-Object { $_.FullName -match '[\\/]amd64[\\/]' } | Select-Object -First 1
+          if (-not $dll) { throw 'amd64 wintun.dll not found in the Wintun archive' }
+          Copy-Item $dll.FullName windows\wintun.dll
+
+      - name: Python tests
+        run: python -m pytest -q
+
+      - name: Build RoutePou.exe
+        shell: pwsh
+        run: |
+          pyinstaller --noconfirm --clean --onefile --windowed `
+            --icon windows/routepou.ico --paths windows `
+            --collect-all zxingcpp --collect-all PIL --collect-all cv2 `
+            --add-binary "windows/relaywg-client.exe;." `
+            --add-binary "windows/wintun.dll;." `
+            --name RoutePou windows/routepou_windows.py
+          New-Item -ItemType Directory -Force dist-out | Out-Null
+          Copy-Item dist\RoutePou.exe "dist-out\RoutePou-$env:VERSION-windows-x64.exe"
+          Get-ChildItem dist-out | Format-Table Name, Length
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RoutePou-Windows
+          if-no-files-found: error
+          retention-days: 30
+          path: dist-out/*.exe
+
+  # --------------------------------------------------------------------- Release
+  release:
+    name: Publish GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [tests, android, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check tag matches VERSION
+        shell: bash
+        run: |
+          version="$(tr -d '[:space:]' < VERSION)"
+          if [ "${GITHUB_REF_NAME}" != "v${version}" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} does not match VERSION file (v${version})."
+            exit 1
+          fi
+          echo "VERSION=${version}" >> "$GITHUB_ENV"
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Checksums and release notes
+        shell: bash
+        run: |
+          cd artifacts
+          rm -f ./*-debug.apk            # debug builds stay workflow-only
+          sha256sum RoutePou-* > SHA256SUMS.txt
+          cd ..
+          awk -v v="## ${VERSION}" 'index($0, v)==1 {p=1; next} /^## / {p=0} p' CHANGELOG.md > notes.md
+          {
+            echo
+            echo "### Downloads"
+            echo "- **Android:** \`RoutePou-${VERSION}-android.apk\` (Android 8.0+)"
+            echo "- **Windows:** \`RoutePou-${VERSION}-windows-x64.exe\` (Windows 10/11 64-bit)"
+            echo "- Verify with \`SHA256SUMS.txt\`."
+            echo
+            echo "> Pre-release: not yet validated on real devices. See the README for known limits."
+          } >> notes.md
+          cat notes.md
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: RoutePou ${{ env.VERSION }}
+          body_path: notes.md
+          prerelease: ${{ contains(env.VERSION, '-') }}
+          fail_on_unmatched_files: true
+          files: |
+            artifacts/RoutePou-*
+            artifacts/SHA256SUMS.txt
