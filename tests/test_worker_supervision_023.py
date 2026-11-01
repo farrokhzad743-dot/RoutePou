@@ -10,7 +10,7 @@ def test_supervisor_monitors_worker_after_handshake():
     assert 'line == "READY"' in source
     assert '_monitor_worker' in source
     assert "self.on_status(line)" in source
-    worker = (ROOT / "windows" / "wg-clinet" / "main.go").read_text(encoding="utf-8")
+    worker = (ROOT / "windows" / "wg-client" / "main.go").read_text(encoding="utf-8")
     assert 'peerLostLine = "PEER-LOST"' in worker
     assert 'peerBackLine = "PEER-BACK"' in worker
     assert 'self.on_exit(reason)' in source

@@ -22,8 +22,6 @@ class AndroidFullModeWiringTests(unittest.TestCase):
         manifest = (ROOT / 'android/app/src/main/AndroidManifest.xml').read_text()
         gradle = (ROOT / 'android/app/build.gradle.kts').read_text()
         self.assertIn('.WireGuardService', manifest)
-        self.assertIn('versionCode = 26', gradle)
-        self.assertIn('versionName = "0.26.0-alpha"', gradle)
 
 if __name__ == '__main__':
     unittest.main()

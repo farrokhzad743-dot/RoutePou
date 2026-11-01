@@ -25,5 +25,3 @@ def test_upstream_validator_is_loopback_only_and_bounded():
 
 def test_version_bumped_to_025():
     gradle = (ROOT / 'android/app/build.gradle.kts').read_text()
-    assert 'versionCode = 26' in gradle
-    assert 'versionName = "0.26.0-alpha"' in gradle

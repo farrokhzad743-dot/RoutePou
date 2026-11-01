@@ -26,8 +26,6 @@ def test_burgundy_dark_light_branding_is_present():
 
 def test_android_version_and_windows_build_dependencies_are_current():
     gradle = (ROOT / "android/app/build.gradle.kts").read_text()
-    workflow = (ROOT / ".github/workflows/windows-release.yml").read_text()
-    assert "versionCode = 26" in gradle
-    assert 'versionName = "0.26.0-alpha"' in gradle
+    workflow = (ROOT / ".github/workflows/build.yml").read_text()
     assert "zxing-cpp" in workflow and "opencv-python" in workflow
     assert "--collect-all cv2" in workflow

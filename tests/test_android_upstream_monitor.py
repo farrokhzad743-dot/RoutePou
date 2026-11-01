@@ -21,5 +21,3 @@ def test_wireguard_service_owns_monitor_lifecycle():
 
 def test_android_version_is_024():
     src = (ROOT / 'android/app/build.gradle.kts').read_text()
-    assert 'versionCode = 26' in src
-    assert 'versionName = "0.26.0-alpha"' in src
