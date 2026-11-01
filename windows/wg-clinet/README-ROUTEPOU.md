@@ -13,5 +13,4 @@ must not write the private key to disk, command-line arguments, or logs. Closing
 the pipe is the worker's teardown signal. `READY` is emitted only after a
 WireGuard handshake. A missing handshake is not a connected state.
 
-This executable is not yet launched by the current Windows GUI. The next
-integration step is the signed/elevated named-pipe supervisor and QR scanner.
+This executable is launched, elevated, by `windows/wg_supervisor.py` (named-pipe session) when the user chooses Full Tunnel in the RoutePou GUI. CI builds it to `windows/relaywg-client.exe` and bundles it into `RoutePou.exe`.
