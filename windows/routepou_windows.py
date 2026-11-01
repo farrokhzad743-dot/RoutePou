@@ -1,5 +1,5 @@
 """RoutePou Windows companion: authenticated HTTP and SOCKS5 TCP bridges."""
-import socket, ssl, hashlib, hmac, threading, tkinter as tk, sys
+import atexit, socket, ssl, hashlib, hmac, threading, tkinter as tk, sys
 from pathlib import Path
 from pairing import parse_pairing_payload
 from wg_provision import parse_qr_to_windows_ipc
@@ -11,6 +11,7 @@ from tkinter import filedialog
 REG_PATH = r"Software\Microsoft\Windows\CurrentVersion\Internet Settings"
 LOCAL_HOST, LOCAL_HTTP_PORT, LOCAL_SOCKS_PORT = "127.0.0.1", 17878, 17879
 PHONE_PORT_DEFAULT = "8788"
+APP_VERSION = "0.27.0-beta"
 http_server = None
 socks_server = None
 wg_session = None
@@ -344,7 +345,7 @@ def apply_theme():
 theme_button = tk.Button(header, text="حالت روشن", command=apply_theme, bg=COLORS["panel2"], fg=COLORS["text"],
                          activebackground=COLORS["border"], relief="flat", padx=12, pady=8, cursor="hand2")
 theme_button.pack(side="right", anchor="n", padx=(8, 0))
-tk.Label(header, text="ALPHA 0.26", font=(FONT, 9, "bold"), fg=COLORS["accent"], bg=COLORS["panel2"], padx=12, pady=7).pack(side="right", anchor="n")
+tk.Label(header, text="BETA " + APP_VERSION.split("-")[0], font=(FONT, 9, "bold"), fg=COLORS["accent"], bg=COLORS["panel2"], padx=12, pady=7).pack(side="right", anchor="n")
 
 status_card = tk.Frame(outer, bg=COLORS["panel"], highlightthickness=1, highlightbackground=COLORS["border"])
 status_card.pack(fill="x", pady=(0, 16))
@@ -569,7 +570,17 @@ tk.Label(notice, text="محدودیت نسخه آلفا", font=(FONT, 9, "bold")
 tk.Label(notice, text="اتصال QR در این نسخه برای جفت‌سازی سریع است. حالت پراکسی و تونل WireGuard مسیرهای جداگانه‌اند؛ قبل از استفاده روزمره، انتقال واقعی ترافیک را آزمایش کنید.",
          font=(FONT, 9), fg="#d8c4ce", bg="#241d2a", wraplength=680, justify="left").pack(anchor="w", padx=14, pady=(0, 10))
 
-footer = tk.Label(outer, text="POU NETWORK TOOLS  •  ROUTEPOU 0.26.0-ALPHA", font=(FONT, 8, "bold"), fg="#647492", bg=COLORS["bg"])
+footer = tk.Label(outer, text=f"POU NETWORK TOOLS  •  ROUTEPOU {APP_VERSION.upper()}", font=(FONT, 8, "bold"), fg="#647492", bg=COLORS["bg"])
 footer.pack(anchor="center", pady=(12, 0))
+def _restore_proxy_on_exit():
+    """Never leave the Windows system proxy pointing at a bridge that no longer exists."""
+    if previous:
+        try:
+            disconnect()
+        except Exception:
+            pass
+
+
+atexit.register(_restore_proxy_on_exit)
 root.protocol("WM_DELETE_WINDOW", lambda: (disconnect_full_tunnel(), disconnect(), root.destroy()))
 root.mainloop()
